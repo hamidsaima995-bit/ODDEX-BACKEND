@@ -14,18 +14,18 @@ const NEWS_API_KEY = process.env.NEWS_API_KEY; // set this in Railway (never in 
 const PORT = process.env.PORT || 3000;
 
 // ─── Asset keyword map: which news topics move which in-game asset ───
-// Each asset reacts to certain words appearing in real headlines.
+// Tuned for entertainment / celebrity / TikTok / YouTube / sports headlines.
 const ASSET_KEYWORDS = {
-  DRAM:  ["drama", "feud", "beef", "controversy", "scandal", "backlash", "fight"],
-  FOMO:  ["viral", "trend", "sold out", "hype", "everyone", "craze", "rush"],
-  CRNG:  ["awkward", "cringe", "embarrassing", "fail", "flop", "disaster"],
-  GHOST: ["breakup", "unfollow", "ignored", "left", "ex", "dating", "ghosted"],
-  EXNRG: ["relationship", "dating", "romance", "heartbreak", "wedding", "divorce"],
-  MNDY:  ["work", "job", "office", "monday", "layoff", "boss", "meeting"],
-  RDBR:  ["energy", "coffee", "boost", "hype", "record", "win", "victory"],
-  BATT:  ["battery", "phone", "charge", "dead", "low", "power"],
-  DELV:  ["delivery", "shipping", "late", "package", "amazon", "delayed"],
-  TABS:  ["browser", "internet", "web", "online", "tech", "app"],
+  DRAM:  ["drama", "feud", "beef", "controversy", "scandal", "backlash", "fight", "diss", "clap back", "shade", "exposed", "canceled"],
+  FOMO:  ["viral", "trend", "sold out", "hype", "everyone", "craze", "rush", "goes viral", "trending", "breaks internet", "record"],
+  CRNG:  ["awkward", "cringe", "embarrassing", "fail", "flop", "disaster", "roasted", "mocked", "booed"],
+  GHOST: ["breakup", "unfollow", "ignored", "split", "ex ", "dating", "ghosted", "divorce", "single"],
+  EXNRG: ["relationship", "dating", "romance", "heartbreak", "wedding", "engaged", "married", "couple", "kiss"],
+  MNDY:  ["work", "job", "layoff", "fired", "quit", "strike", "boss", "retire", "resign"],
+  RDBR:  ["energy", "win", "victory", "champion", "record", "wins", "beats", "defeats", "gold medal", "mvp"],
+  BATT:  ["battery", "phone", "iphone", "android", "tech", "gadget", "launch", "release"],
+  DELV:  ["delivery", "shipping", "late", "package", "amazon", "delayed", "tour", "concert", "canceled show"],
+  TABS:  ["youtube", "tiktok", "streamer", "influencer", "creator", "subscribers", "views", "podcast", "netflix", "movie", "album", "song"],
 };
 
 // ─── Turn a real headline into a funny "market event" ───
@@ -50,12 +50,16 @@ let lastFetch = 0;
 
 // ─── Fetch trending posts from Reddit (free public JSON, no key needed) ───
 async function fetchReddit() {
-  // Public subreddits with lots of "meme-able" trending content
-  const subs = ["news", "worldnews", "technology", "entertainment"];
+  // Entertainment / celebrity / viral / sports subs — most "meme-able" content
+  const subs = [
+    "entertainment", "popculturechat", "Deuxmoi", "celebgossip",
+    "sports", "nba", "soccer", "youtube", "tiktokcringe",
+    "trending", "OutOfTheLoop", "technology", "worldnews",
+  ];
   const titles = [];
   for (const sub of subs) {
     try {
-      const res = await fetch(`https://www.reddit.com/r/${sub}/hot.json?limit=15`, {
+      const res = await fetch(`https://www.reddit.com/r/${sub}/hot.json?limit=12`, {
         headers: { "User-Agent": "oddex-vibe/1.0" },
       });
       const data = await res.json();
@@ -82,14 +86,20 @@ async function fetchNews() {
   const redditTitles = await fetchReddit();
   allTitles = allTitles.concat(redditTitles);
 
-  // Source 2: NewsAPI (if key is set)
+  // Source 2: NewsAPI (if key is set) — entertainment focus
   if (NEWS_API_KEY) {
     try {
-      const url = `https://newsapi.org/v2/top-headlines?language=en&pageSize=30&apiKey=${NEWS_API_KEY}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.articles) {
-        allTitles = allTitles.concat(data.articles.map(a => a.title).filter(Boolean));
+      // Pull both entertainment and general top headlines
+      const urls = [
+        `https://newsapi.org/v2/top-headlines?language=en&category=entertainment&pageSize=25&apiKey=${NEWS_API_KEY}`,
+        `https://newsapi.org/v2/top-headlines?language=en&category=sports&pageSize=15&apiKey=${NEWS_API_KEY}`,
+      ];
+      for (const url of urls) {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.articles) {
+          allTitles = allTitles.concat(data.articles.map(a => a.title).filter(Boolean));
+        }
       }
     } catch (e) { console.error("NewsAPI failed:", e.message); }
   }
