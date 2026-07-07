@@ -143,6 +143,30 @@ function demoEvents() {
 
 app.get("/", (req, res) => res.json({ status: "ODDEX news backend running" }));
 
+// Debug endpoint — shows whether the key is set and if NewsAPI works
+app.get("/debug", async (req, res) => {
+  const keySet = !!NEWS_API_KEY;
+  const keyPreview = NEWS_API_KEY ? (NEWS_API_KEY.slice(0, 4) + "..." + NEWS_API_KEY.slice(-2)) : "NOT SET";
+  let newsApiWorks = false;
+  let newsApiError = null;
+  let sampleTitle = null;
+  if (NEWS_API_KEY) {
+    try {
+      const r = await fetch(`https://newsapi.org/v2/top-headlines?country=us&pageSize=1&apiKey=${NEWS_API_KEY}`);
+      const d = await r.json();
+      if (d.status === "ok" && d.articles?.length) { newsApiWorks = true; sampleTitle = d.articles[0].title; }
+      else newsApiError = d.message || d.code || "unknown";
+    } catch (e) { newsApiError = e.message; }
+  }
+  let redditWorks = false;
+  try {
+    const r = await fetch("https://www.reddit.com/r/news/hot.json?limit=1", { headers: { "User-Agent": "oddex-vibe/1.0" } });
+    const d = await r.json();
+    redditWorks = !!d?.data?.children?.length;
+  } catch (e) { redditWorks = false; }
+  res.json({ keySet, keyPreview, newsApiWorks, newsApiError, sampleTitle, redditWorks });
+});
+
 app.get("/news", async (req, res) => {
   const events = await fetchNews();
   res.json({ events });
