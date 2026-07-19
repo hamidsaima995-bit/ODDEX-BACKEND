@@ -1,84 +1,160 @@
-const express = require("express");
-const cors = require("cors");
-const app = express();
-app.use(cors());
-const NEWS_API_KEY = process.env.NEWS_API_KEY;
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
-const PORT = process.env.PORT || 3000;
+// scraper.js — ODDEX VIBE news scraper
+// Real HTML scraping (Cheerio) -> Supabase news_items table
 
+const cheerio = require("cheerio");
+const { createClient } = require("@supabase/supabase-js");
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY; // service key, anon nahi
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ---------- 1. Asset keywords (server.js jaise hi) ----------
 const ASSET_KEYWORDS = {
-  DRAM:  ["drama","feud","beef","controversy","scandal","backlash","fight","diss","clap back","shade","exposed","canceled"],
-  FOMO:  ["viral","trend","sold out","hype","everyone","craze","rush","goes viral","trending","breaks internet","record"],
+  DRAM:  ["drama","feud","beef","controversy","scandal","backlash","fight","diss","shade","exposed","canceled"],
+  FOMO:  ["viral","trend","sold out","hype","everyone","craze","rush","trending","record"],
   CRNG:  ["awkward","cringe","embarrassing","fail","flop","disaster","roasted","mocked","booed"],
-  GHOST: ["breakup","unfollow","ignored","split","ex ","dating","ghosted","divorce","single"],
-  EXNRG: ["relationship","dating","romance","heartbreak","wedding","engaged","married","couple","kiss"],
+  GHOST: ["breakup","unfollow","ignored","split","dating","ghosted","divorce","single"],
+  EXNRG: ["relationship","dating","romance","heartbreak","wedding","engaged","married","couple"],
   MNDY:  ["work","job","layoff","fired","quit","strike","boss","retire","resign"],
-  RDBR:  ["energy","win","victory","champion","record","wins","beats","defeats","gold medal","mvp"],
+  RDBR:  ["energy","win","victory","champion","record","wins","beats","defeats","mvp"],
   BATT:  ["battery","phone","iphone","android","tech","gadget","launch","release"],
-  DELV:  ["delivery","shipping","late","package","amazon","delayed","tour","concert","canceled show"],
+  DELV:  ["delivery","shipping","late","package","amazon","delayed","tour","concert"],
   TABS:  ["youtube","tiktok","streamer","influencer","creator","subscribers","views","podcast","netflix","movie","album","song"],
 };
-function spiceHeadline(title){const e=["🔥","📈","📉","🚨","💥","⚡","😱","🤯"][Math.floor(Math.random()*8)];const s=title.length>80?title.slice(0,77)+"...":title;return e+" "+s;}
-function priceImpact(){const d=Math.random()>0.5?1:-1;return parseFloat((d*(5+Math.random()*30)).toFixed(1));}
-async function fetchReddit(){
-  const subs=["entertainment","popculturechat","Deuxmoi","celebgossip","sports","nba","soccer","youtube","tiktokcringe","trending","OutOfTheLoop","technology","worldnews"];
-  const titles=[];
-  for(const sub of subs){try{const res=await fetch("https://www.reddit.com/r/"+sub+"/hot.json?limit=12",{headers:{"User-Agent":"oddex-vibe/1.0"}});const data=await res.json();if(data?.data?.children)for(const p of data.data.children)if(p.data?.title)titles.push(p.data.title);}catch(e){}}
-  return titles;
-}
-let cachedEvents=[],lastFetch=0;
-async function fetchNews(){
-  if(Date.now()-lastFetch<3*60*1000&&cachedEvents.length>0)return cachedEvents;
-  let allTitles=[];
-  allTitles=allTitles.concat(await fetchReddit());
-  if(NEWS_API_KEY){try{
-    const urls=["https://newsapi.org/v2/top-headlines?language=en&category=entertainment&pageSize=25&apiKey="+NEWS_API_KEY,"https://newsapi.org/v2/top-headlines?language=en&category=sports&pageSize=15&apiKey="+NEWS_API_KEY];
-    for(const url of urls){const res=await fetch(url);const data=await res.json();if(data.articles)allTitles=allTitles.concat(data.articles.map(a=>a.title).filter(Boolean));}
-  }catch(e){console.error("NewsAPI failed:",e.message);}}
-  if(allTitles.length===0)return demoEvents();
-  const events=[];const symbols=Object.keys(ASSET_KEYWORDS);
-  for(const rawTitle of allTitles){
-    const title=rawTitle.toLowerCase();let matched=false;
-    for(const[symbol,keywords]of Object.entries(ASSET_KEYWORDS)){
-      if(keywords.some(k=>title.includes(k))){events.push({symbol,headline:spiceHeadline(rawTitle),impact:priceImpact(),time:Date.now()});matched=true;break;}
-    }
-    if(!matched&&rawTitle.length>15)events.push({symbol:symbols[Math.floor(Math.random()*symbols.length)],headline:spiceHeadline(rawTitle),impact:priceImpact(),time:Date.now()});
-  }
-  if(events.length===0)return demoEvents();
-  cachedEvents=events.slice(0,25);lastFetch=Date.now();return cachedEvents;
-}
-function demoEvents(){const symbols=Object.keys(ASSET_KEYWORDS);return symbols.slice(0,8).map(s=>({symbol:s,headline:"📊 Market buzz around "+s+" intensifies",impact:priceImpact(),time:Date.now()}));}
 
-let commentCache={};
-async function getAIComment(headline,symbol){
-  if(!DEEPSEEK_API_KEY)return null;
-  if(commentCache[headline])return commentCache[headline];
-  try{
-    const res=await fetch("https://api.deepseek.com/chat/completions",{
-      method:"POST",
-      headers:{"Content-Type":"application/json","Authorization":"Bearer "+DEEPSEEK_API_KEY},
-      body:JSON.stringify({
-        model:"deepseek-chat",
-        messages:[
-          {role:"system",content:"You are a witty, sarcastic trading-show host for a satirical meme trading game. Given a real news headline and an asset symbol, write ONE short funny reaction (max 15 words) like a hype commentator. No hashtags. Keep it playful and clean."},
-          {role:"user",content:'Headline: "'+headline+'". Asset: '+symbol+'. Give your one-line reaction:'}
-        ],
-        max_tokens:40,temperature:1.0
-      })
-    });
-    const data=await res.json();
-    const comment=data?.choices?.[0]?.message?.content?.trim();
-    if(comment){commentCache[headline]=comment;return comment;}
-  }catch(e){console.error("DeepSeek failed:",e.message);}
+function matchSymbol(title) {
+  const t = title.toLowerCase();
+  for (const [symbol, keywords] of Object.entries(ASSET_KEYWORDS)) {
+    if (keywords.some(k => t.includes(k))) return symbol;
+  }
+  const all = Object.keys(ASSET_KEYWORDS);
+  return all[Math.floor(Math.random() * all.length)];
+}
+
+function spiceHeadline(title) {
+  const e = ["🔥","📈","📉","🚨","💥","⚡","😱","🤯"][Math.floor(Math.random() * 8)];
+  const s = title.length > 80 ? title.slice(0, 77) + "..." : title;
+  return e + " " + s;
+}
+
+function priceImpact() {
+  const d = Math.random() > 0.5 ? 1 : -1;
+  return parseFloat((d * (5 + Math.random() * 30)).toFixed(1));
+}
+
+// ---------- 2. Fetch helper (retry + timeout) ----------
+async function fetchHTML(url, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10000);
+
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; oddexvibe-bot/1.0)",
+          "Accept": "text/html",
+        },
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await res.text();
+    } catch (e) {
+      console.log(`  fetch fail (${i + 1}/${retries + 1}) ${url}: ${e.message}`);
+      if (i === retries) return null;
+      await new Promise(r => setTimeout(r, 2000 * (i + 1))); // backoff
+    }
+  }
   return null;
 }
-app.get("/",(req,res)=>res.json({status:"ODDEX news backend running"}));
-app.get("/debug",async(req,res)=>res.json({newsKeySet:!!NEWS_API_KEY,deepseekKeySet:!!DEEPSEEK_API_KEY}));
-app.get("/news",async(req,res)=>{const events=await fetchNews();res.json({events});});
-app.get("/comment",async(req,res)=>{
-  const headline=req.query.headline||"";const symbol=req.query.symbol||"";
-  if(!headline)return res.json({comment:null});
-  const comment=await getAIComment(headline,symbol);
-  res.json({comment});
-});
-app.listen(PORT,()=>console.log("News backend running on port "+PORT));
+
+// ---------- 3. Scrapers ----------
+// Har site ka HTML alag hota hai, isliye har site ka apna selector.
+
+async function scrapeCoinDesk() {
+  const html = await fetchHTML("https://www.coindesk.com/");
+  if (!html) return [];
+
+  const $ = cheerio.load(html);
+  const titles = [];
+
+  // headings ke andar ka text uthao
+  $("h2, h3, h4").each((i, el) => {
+    const text = $(el).text().trim();
+    if (text.length > 25 && text.length < 200) titles.push(text);
+  });
+
+  return [...new Set(titles)].slice(0, 20).map(t => ({ title: t, source: "coindesk" }));
+}
+
+async function scrapeHackerNews() {
+  const html = await fetchHTML("https://news.ycombinator.com/");
+  if (!html) return [];
+
+  const $ = cheerio.load(html);
+  const titles = [];
+
+  $(".titleline > a").each((i, el) => {
+    const text = $(el).text().trim();
+    if (text.length > 20) titles.push(text);
+  });
+
+  return [...new Set(titles)].slice(0, 20).map(t => ({ title: t, source: "hackernews" }));
+}
+
+// ---------- 4. Save to Supabase ----------
+async function saveItems(items) {
+  if (items.length === 0) return 0;
+
+  const rows = items.map(item => ({
+    headline: spiceHeadline(item.title),
+    source: item.source,
+    symbol: matchSymbol(item.title),
+    impact: priceImpact(),
+  }));
+
+  // upsert = duplicate headline aaya to skip, error nahi
+  const { data, error } = await supabase
+    .from("news_items")
+    .upsert(rows, { onConflict: "headline", ignoreDuplicates: true })
+    .select();
+
+  if (error) {
+    console.error("Supabase error:", error.message);
+    return 0;
+  }
+  return data ? data.length : 0;
+}
+
+// ---------- 5. Main ----------
+async function runScraper() {
+  console.log("Scraper start:", new Date().toISOString());
+
+  const results = await Promise.all([
+    scrapeCoinDesk(),
+    scrapeHackerNews(),
+  ]);
+
+  const all = results.flat();
+  console.log(`Scraped ${all.length} headlines`);
+
+  if (all.length === 0) {
+    console.log("Kuch nahi mila — selectors check karo");
+    return { scraped: 0, saved: 0 };
+  }
+
+  const saved = await saveItems(all);
+  console.log(`Saved ${saved} new (baaki duplicate the)`);
+
+  return { scraped: all.length, saved };
+}
+
+// Direct run: node scraper.js
+if (require.main === module) {
+  runScraper()
+    .then(r => { console.log("Done:", r); process.exit(0); })
+    .catch(e => { console.error("Crash:", e); process.exit(1); });
+}
+
+module.exports = { runScraper };
