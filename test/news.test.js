@@ -108,12 +108,12 @@ test("writeNews posts with service key, retries without new columns, skips witho
   assert.equal(calls[0].url, "https://p.supabase.co/rest/v1/market_news?on_conflict=headline");
   assert.equal(calls[0].opts.headers.Authorization, "Bearer eyJsvc");
   assert.equal(calls[0].opts.headers.apikey, "eyJsvc");
+  assert.deepEqual(Object.keys(calls[1].body[0]), ["headline", "symbol", "impact"]);
   calls.length = 0;
   await writeNews(rows, { url: "https://p.supabase.co", key: "sb_secret_abc", fetchImpl: async (u, o) => { calls.push(o); return { ok: true, json: async () => [] }; } });
   assert.equal(calls[0].headers.Authorization, undefined);
   assert.equal(calls[0].headers.apikey, "sb_secret_abc");
-  assert.match(calls[0].opts.headers.Prefer, /ignore-duplicates/);
-  assert.deepEqual(Object.keys(calls[1].body[0]), ["headline", "symbol", "impact"]);
+  assert.match(calls[0].headers.Prefer, /ignore-duplicates/);
   assert.equal((await writeNews(rows, { url: "u" })).skipped, "no supabase credentials");
 });
 
