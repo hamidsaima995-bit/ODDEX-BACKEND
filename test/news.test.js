@@ -103,10 +103,15 @@ test("writeNews posts with service key, retries without new columns, skips witho
     return { ok: true, json: async () => [{}, {}] };
   };
   const rows = [{ headline: "a", symbol: "FILM", impact: 5, source: "BBC", url: "https://x" }, { headline: "b", symbol: "SPRT", impact: -4, source: "ESPN", url: null }];
-  const r = await writeNews(rows, { url: "https://p.supabase.co/", key: "svc", fetchImpl });
+  const r = await writeNews(rows, { url: "https://p.supabase.co/", key: "eyJsvc", fetchImpl });
   assert.equal(r.written, 2);
   assert.equal(calls[0].url, "https://p.supabase.co/rest/v1/market_news?on_conflict=headline");
-  assert.equal(calls[0].opts.headers.Authorization, "Bearer svc");
+  assert.equal(calls[0].opts.headers.Authorization, "Bearer eyJsvc");
+  assert.equal(calls[0].opts.headers.apikey, "eyJsvc");
+  calls.length = 0;
+  await writeNews(rows, { url: "https://p.supabase.co", key: "sb_secret_abc", fetchImpl: async (u, o) => { calls.push(o); return { ok: true, json: async () => [] }; } });
+  assert.equal(calls[0].headers.Authorization, undefined);
+  assert.equal(calls[0].headers.apikey, "sb_secret_abc");
   assert.match(calls[0].opts.headers.Prefer, /ignore-duplicates/);
   assert.deepEqual(Object.keys(calls[1].body[0]), ["headline", "symbol", "impact"]);
   assert.equal((await writeNews(rows, { url: "u" })).skipped, "no supabase credentials");
