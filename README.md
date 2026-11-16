@@ -2,26 +2,32 @@
 
 The news backend for OddexVibe. It takes real news and turns it into market events the game can react to, and serves them over a simple API.
 
-## Tech
+## How it works
 
-- Node.js with Express
-- CORS enabled so the game frontend can call it
+Every 3 minutes the server reads publisher RSS feeds (BBC, Variety, The Verge, TechCrunch, ESPN), takes only headlines it has not seen yet, and asks DeepSeek which of the 50 ODDEX markets each one affects and how it moves that index. If DeepSeek is not set or fails, a keyword matcher takes over. Nothing is random: the same headline always gives the same result.
 
-## What is inside
+Market-moving headlines are written to the Supabase table `market_news` with the service key. The game reads that table, so every player sees the same headline at the same time and the same price move.
 
-- `server.js`, the API server
-- `package.json`, dependencies and the start script
+## Settings (Railway variables)
+
+- `DEEPSEEK_API_KEY`: scores headlines. Without it the keyword fallback is used.
+- `SUPABASE_SERVICE_KEY`: lets the server write `market_news`. Find it in Supabase under Project Settings, API, `service_role` key. Keep it secret, never put it in the frontend.
+- `SUPABASE_URL`: optional, defaults to the ODDEX project.
+
+## Endpoints
+
+- `GET /news`: latest market-moving headlines.
+- `GET /status`: feed health, classifier in use, rows written. No secrets.
 
 ## Running it locally
 
-You need Node.js installed.
+You need Node.js 18 or newer.
 
 ```
 npm install
+npm test
 npm start
 ```
-
-The server starts and serves the API. Open the address it prints to check it.
 
 ## Deployment
 

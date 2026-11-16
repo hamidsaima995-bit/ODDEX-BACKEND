@@ -1,11 +1,12 @@
 {
   "name": "oddex-news-backend",
-  "version": "1.0.0",
-  "description": "News backend for ODDEX VIBE — turns real news into market events",
+  "version": "2.0.0",
+  "description": "News backend for ODDEX VIBE: real headlines, AI-scored, written to Supabase",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "express": "^4.19.2",
