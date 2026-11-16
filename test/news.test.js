@@ -116,3 +116,18 @@ test("market tickers match the frontend catalog", { skip: !fs.existsSync(path.jo
   const front = [...src.matchAll(/symbol: "([A-Z]+)"/g)].map((m) => m[1]).sort();
   assert.deepEqual(MARKETS.map((m) => m.s).sort(), front);
 });
+
+test("headlines about human suffering are never traded", async () => {
+  const titles = ["Actor sentenced to prison after sexual assault case", "Flood kills dozens", "Netflix renews hit comedy series"];
+  for (const t of titles.slice(0, 2)) assert.equal(C.isSensitive(t), true, t);
+  assert.equal(C.isSensitive(titles[2]), false);
+  // Even if the AI returns them, they are dropped.
+  const ai = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ items: [
+    { i: 0, symbol: "CELEB", move: -0.8, magnitude: 0.8 }, { i: 1, symbol: "STRS", move: 0.9, magnitude: 0.9 }, { i: 2, symbol: "STRM", move: 0.6, magnitude: 0.4 },
+  ] }) } }] }) });
+  const r = await C.classifyAll(titles, "key", ai);
+  assert.equal(r.results[0], null);
+  assert.equal(r.results[1], null);
+  assert.equal(r.results[2].symbol, "STRM");
+  assert.ok(C.buildPrompt(["x"])[0].content.includes("never trade on tragedy"));
+});
