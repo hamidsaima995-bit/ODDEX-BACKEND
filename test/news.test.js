@@ -56,25 +56,26 @@ test("impact is bounded and signed", () => {
 });
 
 test("AI output is validated", () => {
+  const titles = ["Film wins", "Odd one", "Match today", "Cup final"];
   const txt = JSON.stringify({ items: [
-    { i: 0, symbol: "film", move: 0.8, magnitude: 0.5 },
-    { i: 1, symbol: "NOPE", move: 0.8, magnitude: 0.5 },
-    { i: 2, symbol: "SPRT", move: 0.05, magnitude: 0.9 },
-    { i: 9, symbol: "SPRT", move: 0.5, magnitude: 0.5 },
-    { i: 3, symbol: "SPRT", move: "x", magnitude: 0.5 },
+    { i: 0, w: "Film", symbol: "film", move: 0.8, magnitude: 0.5 },
+    { i: 1, w: "Odd", symbol: "NOPE", move: 0.8, magnitude: 0.5 },
+    { i: 2, w: "Match", symbol: "SPRT", move: 0.05, magnitude: 0.9 },
+    { i: 9, w: "Cup", symbol: "SPRT", move: 0.5, magnitude: 0.5 },
+    { i: 3, w: "Cup", symbol: "SPRT", move: "x", magnitude: 0.5 },
   ] });
-  const r = C.parseClassification(txt, 4);
+  const r = C.parseClassification(txt, titles);
   assert.equal(r[0].symbol, "FILM");
   assert.ok(r[0].impact > 0);
   assert.equal(r[1], null);
   assert.equal(r[2], null);
   assert.equal(r[3], null);
-  assert.deepEqual(C.parseClassification("not json", 2), [null, null]);
+  assert.deepEqual(C.parseClassification("not json", ["a b", "c d"]), [null, null]);
 });
 
 test("classifyAll uses AI, falls back to keywords on error", async () => {
   const titles = ["Netflix series renewed after record views", "Weather today"];
-  const ok = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ items: [{ i: 0, symbol: "STRM", move: 0.7, magnitude: 0.6 }] }) } }] }) });
+  const ok = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ items: [{ i: 0, w: "Netflix", symbol: "STRM", move: 0.7, magnitude: 0.6 }] }) } }] }) });
   const a = await C.classifyAll(titles, "key", ok);
   assert.equal(a.usedAI, true);
   assert.equal(a.results[0].by, "ai");
@@ -123,11 +124,31 @@ test("headlines about human suffering are never traded", async () => {
   assert.equal(C.isSensitive(titles[2]), false);
   // Even if the AI returns them, they are dropped.
   const ai = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ items: [
-    { i: 0, symbol: "CELEB", move: -0.8, magnitude: 0.8 }, { i: 1, symbol: "STRS", move: 0.9, magnitude: 0.9 }, { i: 2, symbol: "STRM", move: 0.6, magnitude: 0.4 },
+    { i: 0, w: "Actor", symbol: "CELEB", move: -0.8, magnitude: 0.8 }, { i: 1, w: "Flood", symbol: "STRS", move: 0.9, magnitude: 0.9 }, { i: 2, w: "Netflix", symbol: "STRM", move: 0.6, magnitude: 0.4 },
   ] }) } }] }) });
   const r = await C.classifyAll(titles, "key", ai);
   assert.equal(r.results[0], null);
   assert.equal(r.results[1], null);
   assert.equal(r.results[2].symbol, "STRM");
   assert.ok(C.buildPrompt(["x"])[0].content.includes("never trade on tragedy"));
+});
+
+test("a renumbered / shifted AI answer can't land on the wrong headline", () => {
+  const titles = ["Russell Brand moved to new prison", "Dr. Hedgehog documentary boarded", "Avoid this Black Friday scam"];
+  // Model skipped item 0 and numbered the rest from 0: classic shift.
+  const shifted = JSON.stringify({ items: [
+    { i: 0, w: "Dr.", symbol: "FILM", move: 0.4, magnitude: 0.3 },
+    { i: 1, w: "Avoid", symbol: "TRST", move: -0.5, magnitude: 0.4 },
+  ] });
+  const r = C.parseClassification(shifted, titles);
+  assert.deepEqual(r, [null, null, null]);
+  const right = JSON.stringify({ items: [
+    { i: 0, w: "Russell", symbol: null, move: 0, magnitude: 0 },
+    { i: 1, w: "Dr.", symbol: "FILM", move: 0.4, magnitude: 0.3 },
+    { i: 2, w: "Avoid", symbol: "TRST", move: -0.5, magnitude: 0.4 },
+  ] });
+  const ok = C.parseClassification(right, titles);
+  assert.equal(ok[0], null);
+  assert.equal(ok[1].symbol, "FILM");
+  assert.equal(ok[2].symbol, "TRST");
 });
